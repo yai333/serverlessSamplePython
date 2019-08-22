@@ -1,5 +1,5 @@
 Outputs:
-  eventsActivitiesProcess:
+  EventsActivitiesProcess:
     Description: The ARN of the example state machine
     Value:
       Ref: EventsActivitiesProcessDash${opt:stage}

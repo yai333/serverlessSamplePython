@@ -15,8 +15,6 @@ def addNewEventMessage(event, context):
 
     if 'location' not in data:
         logging.error("Validation Failed")
-        raise Exception("Couldn't create the event item.")
-
 
     table = dynamodb.Table(os.environ['eventTable'])
 
@@ -63,14 +61,33 @@ def addNewActivityMessage(event, context):
     return response
 
 def newMessageEventListener(event, context):
-    logger.info("newMessageEventListener" + event )
+    try:
+        dbclient = boto3.client('stepfunctions')
+        data = event['Records']
+        inputData = data[0]['dynamodb']['NewImage']
+        table = data[0]['eventSourceARN'].split(':')[5].split('/')[1]
+
+        if data[0]['eventName'] == "INSERT":
+            response = dbclient.start_execution(
+                        stateMachineArn =os.environ['statemachineArn'],
+                        input = json.dump(inputData)
+                    )
+        return
+    except Exception as e:
+        logging.error(e)
+        return 
 
 def caculateInsightOne(event, context):
-    logger.info("caculateInsightOne" + event )
+    print(event)
+    logging.info("Calcate Insight one")
+    return
 
 
 def caculateInsightTwo(event, context):
-    logger.info("caculateInsightTwo" + event )
+    print(event)
+    logging.info("Calcate Insight two")
+    return
 
 def syncDBToS3(event, context):
-    logger.info("caculateInsightTwo" + event )
+    print(event)
+    return

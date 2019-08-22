@@ -21,6 +21,7 @@ service: eventdatapipeline
 
 provider:
   region: ap-southeast-2
+  profile: yiai
   name: aws
   runtime: python3.7
   tracing: true # enable tracing
@@ -28,9 +29,8 @@ provider:
     - myFirstKey
     - ${opt:stage}-myFirstKey
   environment:
-      eventTable: ${self:custom.eventTable}
-      activityTable: ${self:custom.activityTable}
-      statemachineArn: ${self:resources.Outputs.eventsActivitiesProcess.Value}
+    eventTable: ${self:custom.eventTable}
+    activityTable: ${self:custom.activityTable}
   stage: ${opt:stage, 'dev'}
   iamRoleStatements:
     - Effect: "Allow"
@@ -89,18 +89,20 @@ functions:
           method: put
           private: true
   newMessageEventListener:
-      handler: handler.newMessageEventListener
-      events:
-        - stream:
-            type: dynamodb
-            arn:
-              Fn::GetAtt: [EventTable, StreamArn]
-        - stream:
-            type: dynamodb
-            arn:
-              Fn::GetAtt: [ActivityTable, StreamArn]
+    handler: handler.newMessageEventListener
+    environment:
+      statemachineArn: ${self:resources.Outputs.EventsActivitiesProcess.Value}
+    events:
+      - stream:
+          type: dynamodb
+          arn:
+            Fn::GetAtt: [EventTable, StreamArn]
+      - stream:
+          type: dynamodb
+          arn:
+            Fn::GetAtt: [ActivityTable, StreamArn]
   caculateInsightOne:
-    handler: handler.processBathroomInsight
+    handler: handler.caculateInsightOne
   caculateInsightTwo:
     handler: handler.caculateInsightTwo
   syncDBToS3:
@@ -129,11 +131,11 @@ stepFunctions:
                   validateMessage:
                     Type: Choice
                     Choices:
-                      - Variable: $.type
-                        StringEquals: "EVENT"
+                      - Variable: $.location.S
+                        StringEquals: "Bathroom"
                         Next: caculateInsightOne
-                      - Variable: $.type
-                        StringEquals: "ACTIVITY"
+                      - Variable: $.location.S
+                        StringEquals: "Kitchen"
                         Next: caculateInsightTwo
                   caculateInsightOne:
                     Type: Task
@@ -153,18 +155,89 @@ stepFunctions:
 
 custom:
   pythonRequirements:
-    layer: false  #Put dependencies into a Lambda Layer.
+    layer: false #Put dependencies into a Lambda Layer.
   tableThroughputs:
     production: "5"
     dev: "1"
   eventBucket: event.${self:provider.stage}
-  activityBucket : activity.${self:provider.stage}
+  activityBucket: activity.${self:provider.stage}
   eventTable: event-${self:provider.stage}
   activityTable: activity-${self:provider.stage}
 
 resources:
-  - ${file(resources/outputs.yml)}
+  Outputs:
+    EventsActivitiesProcess:
+      Description: The ARN of the example state machine
+      Value:
+        Ref: EventsActivitiesProcessDash${opt:stage}
   # dynamodb
-  - ${file(resources/dynamodb.yml)}
-  # s3
-  - ${file(resources/s3.yml)}
+  Resources:
+    EventTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:custom.eventTable}
+        AttributeDefinitions:
+          - AttributeName: id
+            AttributeType: S
+          - AttributeName: date
+            AttributeType: S
+          - AttributeName: location
+            AttributeType: S
+        KeySchema:
+          - AttributeName: id
+            KeyType: HASH
+          - AttributeName: date
+            KeyType: RANGE
+        LocalSecondaryIndexes:
+          - IndexName: locationIndex
+            KeySchema:
+              - AttributeName: id
+                KeyType: HASH
+              - AttributeName: location
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+        ProvisionedThroughput:
+          ReadCapacityUnits: ${self:custom.tableThroughputs.${self:provider.stage}}
+          WriteCapacityUnits: ${self:custom.tableThroughputs.${self:provider.stage}}
+        StreamSpecification:
+          StreamViewType: NEW_IMAGE
+    ActivityTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:custom.activityTable}
+        AttributeDefinitions:
+          - AttributeName: id
+            AttributeType: S
+          - AttributeName: date
+            AttributeType: S
+          - AttributeName: location
+            AttributeType: S
+        KeySchema:
+          - AttributeName: id
+            KeyType: HASH
+          - AttributeName: date
+            KeyType: RANGE
+        LocalSecondaryIndexes:
+          - IndexName: locationIndex
+            KeySchema:
+              - AttributeName: id
+                KeyType: HASH
+              - AttributeName: location
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+        ProvisionedThroughput:
+          ReadCapacityUnits: ${self:custom.tableThroughputs.${self:provider.stage}}
+          WriteCapacityUnits: ${self:custom.tableThroughputs.${self:provider.stage}}
+        StreamSpecification:
+          StreamViewType: NEW_IMAGE
+    # s3
+    S3BucketEvent:
+      Type: AWS::S3::Bucket
+      Properties:
+        BucketName: ${self:custom.eventBucket}
+    S3BucketActivity:
+      Type: AWS::S3::Bucket
+      Properties:
+        BucketName: ${self:custom.activityBucket}
