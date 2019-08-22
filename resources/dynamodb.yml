@@ -1,0 +1,61 @@
+ Resources:
+    EventTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:custom.eventTable}
+        AttributeDefinitions:
+          - AttributeName: id
+            AttributeType: S
+          - AttributeName: date
+            AttributeType: S
+          - AttributeName: location
+            AttributeType: S
+        KeySchema:
+          - AttributeName: id
+            KeyType: HASH
+          - AttributeName: date
+            KeyType: RANGE
+        LocalSecondaryIndexes:
+          - IndexName: statusIndex
+            KeySchema:
+              - AttributeName: id
+                KeyType: HASH
+              - AttributeName: location
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+        ProvisionedThroughput:
+          ReadCapacityUnits: ${self:custom.tableThroughputs.${self:provider.stage}}
+          WriteCapacityUnits: ${self:custom.tableThroughputs.${self:provider.stage}}
+        StreamSpecification:
+          StreamViewType: NEW_IMAGE
+    ActivityTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:custom.activityTable}
+        AttributeDefinitions:
+          - AttributeName: id
+            AttributeType: S
+          - AttributeName: date
+            AttributeType: S
+          - AttributeName: location
+            AttributeType: S
+        KeySchema:
+          - AttributeName: id
+            KeyType: HASH
+          - AttributeName: date
+            KeyType: RANGE
+        LocalSecondaryIndexes:
+          - IndexName: statusIndex
+            KeySchema:
+              - AttributeName: id
+                KeyType: HASH
+              - AttributeName: location
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+        ProvisionedThroughput:
+          ReadCapacityUnits: ${self:custom.tableThroughputs.${self:provider.stage}}
+          WriteCapacityUnits: ${self:custom.tableThroughputs.${self:provider.stage}}
+        StreamSpecification:
+          StreamViewType: NEW_IMAGE

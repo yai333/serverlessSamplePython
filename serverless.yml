@@ -1,0 +1,170 @@
+# Welcome to Serverless!
+#
+# This file is the main config file for your service.
+# It's very minimal at this point and uses default values.
+# You can always add more config options for more control.
+# We've included some commented out config examples here.
+# Just uncomment any of them to get that config option.
+#
+# For full config options, check the docs:
+#    docs.serverless.com
+#
+# Happy Coding!
+
+service: eventdatapipeline
+#app: your-app-name
+#tenant: your-tenant-name
+
+# You can pin your service to only deploy with a specific Serverless version
+# Check out our docs for more details
+# frameworkVersion: "=X.X.X"
+
+provider:
+  region: ap-southeast-2
+  name: aws
+  runtime: python3.7
+  tracing: true # enable tracing
+  apiKeys:
+    - myFirstKey
+    - ${opt:stage}-myFirstKey
+  environment:
+      eventTable: ${self:custom.eventTable}
+      activityTable: ${self:custom.activityTable}
+      statemachineArn: ${self:resources.Outputs.eventsActivitiesProcess.Value}
+  stage: ${opt:stage, 'dev'}
+  iamRoleStatements:
+    - Effect: "Allow"
+      Action:
+        - "cognito-idp:*"
+      Resource: "*"
+    - Effect: "Allow"
+      Action:
+        - "ses:SendEmail"
+      Resource: "*"
+    - Effect: "Allow"
+      Action:
+        - "dynamodb:*"
+      Resource:
+        - "Fn::GetAtt": [EventTable, Arn]
+        - "Fn::Join":
+            - "/"
+            - - { "Fn::GetAtt": [EventTable, Arn] }
+              - "index/*"
+        - "Fn::GetAtt": [ActivityTable, Arn]
+        - "Fn::Join":
+            - "/"
+            - - { "Fn::GetAtt": [ActivityTable, Arn] }
+              - "index/*"
+    - Effect: "Allow"
+      Action:
+        - "xray:PutTraceSegments"
+        - "xray:PutTelemetryRecords"
+      Resource:
+        - "*"
+    - Effect: "Allow"
+      Action:
+        - "states:StartExecution"
+      Resource:
+        - "*"
+    - Effect: "Allow"
+      Action:
+        - "s3:PutObject"
+      Resource:
+        - arn:aws:s3:::${self:custom.activityBucket}/*
+        - arn:aws:s3:::${self:custom.eventBucket}/*
+
+functions:
+  addNewEventMessage:
+    handler: handler.addNewEventMessage
+    events:
+      - http:
+          path: message/event
+          method: put
+          private: true
+  addNewActivityMessage:
+    handler: handler.addNewActivityMessage
+    events:
+      - http:
+          path: message/activity
+          method: put
+          private: true
+  newMessageEventListener:
+      handler: handler.newMessageEventListener
+      events:
+        - stream:
+            type: dynamodb
+            arn:
+              Fn::GetAtt: [EventTable, StreamArn]
+        - stream:
+            type: dynamodb
+            arn:
+              Fn::GetAtt: [ActivityTable, StreamArn]
+  caculateInsightOne:
+    handler: handler.processBathroomInsight
+  caculateInsightTwo:
+    handler: handler.caculateInsightTwo
+  syncDBToS3:
+    handler: handler.syncDBToS3
+
+plugins:
+  - serverless-python-requirements
+  - serverless-plugin-tracing
+  - serverless-pseudo-parameters
+  - serverless-offline-python
+  - serverless-step-functions
+
+stepFunctions:
+  stateMachines:
+    eventsActivitiesProcess:
+      name: eventsActivitiesProcess-${opt:stage}
+      definition:
+        Comment: "Sync data from dynamodb to S3, caculate insight by type"
+        StartAt: parallelMessageProcessing
+        States:
+          parallelMessageProcessing:
+            Type: Parallel
+            Branches:
+              - StartAt: validateMessage
+                States:
+                  validateMessage:
+                    Type: Choice
+                    Choices:
+                      - Variable: $.type
+                        StringEquals: "EVENT"
+                        Next: caculateInsightOne
+                      - Variable: $.type
+                        StringEquals: "ACTIVITY"
+                        Next: caculateInsightTwo
+                  caculateInsightOne:
+                    Type: Task
+                    Resource: arn:aws:lambda:${self:provider.region}:#{AWS::AccountId}:function:${self:service}-${opt:stage}-caculateInsightOne
+                    End: true
+                  caculateInsightTwo:
+                    Type: Task
+                    Resource: arn:aws:lambda:${self:provider.region}:#{AWS::AccountId}:function:${self:service}-${opt:stage}-caculateInsightTwo
+                    End: true
+              - StartAt: syncDBToS3
+                States:
+                  syncDBToS3:
+                    Type: Task
+                    Resource: arn:aws:lambda:${self:provider.region}:#{AWS::AccountId}:function:${self:service}-${opt:stage}-syncDBToS3
+                    End: true
+            End: true
+
+custom:
+  pythonRequirements:
+    layer: false  #Put dependencies into a Lambda Layer.
+  tableThroughputs:
+    production: "5"
+    dev: "1"
+  eventBucket: event.${self:provider.stage}
+  activityBucket : activity.${self:provider.stage}
+  eventTable: event-${self:provider.stage}
+  activityTable: activity-${self:provider.stage}
+
+resources:
+  - ${file(resources/outputs.yml)}
+  # dynamodb
+  - ${file(resources/dynamodb.yml)}
+  # s3
+  - ${file(resources/s3.yml)}

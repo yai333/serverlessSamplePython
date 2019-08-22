@@ -1,0 +1,14 @@
+{
+  "name": "eventdatapipeline",
+  "description": "",
+  "version": "0.1.0",
+  "dependencies": {
+    "serverless-pseudo-parameters": "^2.4.0"
+  },
+  "devDependencies": {
+    "serverless-offline-python": "^3.22.1",
+    "serverless-plugin-tracing": "^2.0.0",
+    "serverless-python-requirements": "^5.0.0",
+    "serverless-step-functions": "^2.6.0"
+  }
+}
