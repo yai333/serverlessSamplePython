@@ -1,0 +1,39 @@
+- Effect: "Allow"
+  Action:
+    - "cognito-idp:*"
+  Resource: "*"
+- Effect: "Allow"
+  Action:
+    - "ses:SendEmail"
+  Resource: "*"
+- Effect: "Allow"
+  Action:
+    - "dynamodb:*"
+  Resource:
+    - "Fn::GetAtt": [EventTable, Arn]
+    - "Fn::Join":
+        - "/"
+        - - { "Fn::GetAtt": [EventTable, Arn] }
+          - "index/*"
+    - "Fn::GetAtt": [ActivityTable, Arn]
+    - "Fn::Join":
+        - "/"
+        - - { "Fn::GetAtt": [ActivityTable, Arn] }
+          - "index/*"
+- Effect: "Allow"
+  Action:
+    - "xray:PutTraceSegments"
+    - "xray:PutTelemetryRecords"
+  Resource:
+    - "*"
+- Effect: "Allow"
+  Action:
+    - "states:StartExecution"
+  Resource:
+    - "*"
+- Effect: "Allow"
+  Action:
+    - "s3:PutObject"
+  Resource:
+    - arn:aws:s3:::${self:custom.activityBucket}/*
+    - arn:aws:s3:::${self:custom.eventBucket}/*

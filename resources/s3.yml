@@ -1,9 +1,0 @@
-  Resources:
-    S3BucketEvent:
-      Type: AWS::S3::Bucket
-      Properties:
-        BucketName: ${self:custom.eventBucket}
-    S3BucketActivity:
-      Type: AWS::S3::Bucket
-      Properties:
-        BucketName: ${self:custom.activityBucket}

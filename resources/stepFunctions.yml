@@ -1,0 +1,39 @@
+stateMachines:
+  eventsActivitiesProcess:
+    name: eventsActivitiesProcess-${opt:stage}
+    definition:
+      Comment: "Sync data from dynamodb to S3, caculate insight by type"
+      StartAt: parallelMessageProcessing
+      States:
+        parallelMessageProcessing:
+          Type: Parallel
+          Branches:
+            - StartAt: validateMessage
+              States:
+                validateMessage:
+                  Type: Choice
+                  Choices:
+                    - Variable: $.location
+                      StringEquals: "Bathroom"
+                      Next: caculateInsightOne
+                    - Variable: $.location
+                      StringEquals: "Kitchen"
+                      Next: caculateInsightTwo
+                  Default: defaultState
+                caculateInsightOne:
+                  Type: Task
+                  Resource: arn:aws:lambda:${self:provider.region}:#{AWS::AccountId}:function:${self:service}-${opt:stage}-caculateInsightOne
+                  End: true
+                caculateInsightTwo:
+                  Type: Task
+                  Resource: arn:aws:lambda:${self:provider.region}:#{AWS::AccountId}:function:${self:service}-${opt:stage}-caculateInsightTwo
+                  End: true
+                defaultState:
+                  Type: Succeed
+            - StartAt: syncDBToS3
+              States:
+                syncDBToS3:
+                  Type: Task
+                  Resource: arn:aws:lambda:${self:provider.region}:#{AWS::AccountId}:function:${self:service}-${opt:stage}-syncDBToS3
+                  End: true
+          End: true

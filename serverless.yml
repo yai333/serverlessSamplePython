@@ -1,27 +1,13 @@
-# Welcome to Serverless!
-#
-# This file is the main config file for your service.
-# It's very minimal at this point and uses default values.
-# You can always add more config options for more control.
-# We've included some commented out config examples here.
-# Just uncomment any of them to get that config option.
-#
-# For full config options, check the docs:
-#    docs.serverless.com
-#
-# Happy Coding!
-
 service: eventdatapipeline
-#app: your-app-name
-#tenant: your-tenant-name
 
-# You can pin your service to only deploy with a specific Serverless version
-# Check out our docs for more details
-# frameworkVersion: "=X.X.X"
+package:
+  include:
+    - requirements.txt
+  exclude:
+    - .git/**
 
 provider:
   region: ap-southeast-2
-  profile: yiai
   name: aws
   runtime: python3.7
   tracing: true # enable tracing
@@ -31,82 +17,14 @@ provider:
   environment:
     eventTable: ${self:custom.eventTable}
     activityTable: ${self:custom.activityTable}
+    eventBucket: ${self:custom.eventBucket}
+    activityBucket: ${self:custom.activityBucket}
   stage: ${opt:stage, 'dev'}
   iamRoleStatements:
-    - Effect: "Allow"
-      Action:
-        - "cognito-idp:*"
-      Resource: "*"
-    - Effect: "Allow"
-      Action:
-        - "ses:SendEmail"
-      Resource: "*"
-    - Effect: "Allow"
-      Action:
-        - "dynamodb:*"
-      Resource:
-        - "Fn::GetAtt": [EventTable, Arn]
-        - "Fn::Join":
-            - "/"
-            - - { "Fn::GetAtt": [EventTable, Arn] }
-              - "index/*"
-        - "Fn::GetAtt": [ActivityTable, Arn]
-        - "Fn::Join":
-            - "/"
-            - - { "Fn::GetAtt": [ActivityTable, Arn] }
-              - "index/*"
-    - Effect: "Allow"
-      Action:
-        - "xray:PutTraceSegments"
-        - "xray:PutTelemetryRecords"
-      Resource:
-        - "*"
-    - Effect: "Allow"
-      Action:
-        - "states:StartExecution"
-      Resource:
-        - "*"
-    - Effect: "Allow"
-      Action:
-        - "s3:PutObject"
-      Resource:
-        - arn:aws:s3:::${self:custom.activityBucket}/*
-        - arn:aws:s3:::${self:custom.eventBucket}/*
+    ${file(resources/iamrole.yml)}
 
 functions:
-  addNewEventMessage:
-    handler: handler.addNewEventMessage
-    events:
-      - http:
-          path: message/event
-          method: put
-          private: true
-  addNewActivityMessage:
-    handler: handler.addNewActivityMessage
-    events:
-      - http:
-          path: message/activity
-          method: put
-          private: true
-  newMessageEventListener:
-    handler: handler.newMessageEventListener
-    environment:
-      statemachineArn: ${self:resources.Outputs.EventsActivitiesProcess.Value}
-    events:
-      - stream:
-          type: dynamodb
-          arn:
-            Fn::GetAtt: [EventTable, StreamArn]
-      - stream:
-          type: dynamodb
-          arn:
-            Fn::GetAtt: [ActivityTable, StreamArn]
-  caculateInsightOne:
-    handler: handler.caculateInsightOne
-  caculateInsightTwo:
-    handler: handler.caculateInsightTwo
-  syncDBToS3:
-    handler: handler.syncDBToS3
+    ${file(resources/functions.yml)}
 
 plugins:
   - serverless-python-requirements
@@ -116,42 +34,7 @@ plugins:
   - serverless-step-functions
 
 stepFunctions:
-  stateMachines:
-    eventsActivitiesProcess:
-      name: eventsActivitiesProcess-${opt:stage}
-      definition:
-        Comment: "Sync data from dynamodb to S3, caculate insight by type"
-        StartAt: parallelMessageProcessing
-        States:
-          parallelMessageProcessing:
-            Type: Parallel
-            Branches:
-              - StartAt: validateMessage
-                States:
-                  validateMessage:
-                    Type: Choice
-                    Choices:
-                      - Variable: $.location.S
-                        StringEquals: "Bathroom"
-                        Next: caculateInsightOne
-                      - Variable: $.location.S
-                        StringEquals: "Kitchen"
-                        Next: caculateInsightTwo
-                  caculateInsightOne:
-                    Type: Task
-                    Resource: arn:aws:lambda:${self:provider.region}:#{AWS::AccountId}:function:${self:service}-${opt:stage}-caculateInsightOne
-                    End: true
-                  caculateInsightTwo:
-                    Type: Task
-                    Resource: arn:aws:lambda:${self:provider.region}:#{AWS::AccountId}:function:${self:service}-${opt:stage}-caculateInsightTwo
-                    End: true
-              - StartAt: syncDBToS3
-                States:
-                  syncDBToS3:
-                    Type: Task
-                    Resource: arn:aws:lambda:${self:provider.region}:#{AWS::AccountId}:function:${self:service}-${opt:stage}-syncDBToS3
-                    End: true
-            End: true
+  ${file(resources/stepFunctions.yml)}
 
 custom:
   pythonRequirements:
@@ -159,8 +42,8 @@ custom:
   tableThroughputs:
     production: "5"
     dev: "1"
-  eventBucket: event.${self:provider.stage}
-  activityBucket: activity.${self:provider.stage}
+  eventBucket: billy-workshop-event.${self:provider.stage}
+  activityBucket: billy-worshop-activity.${self:provider.stage}
   eventTable: event-${self:provider.stage}
   activityTable: activity-${self:provider.stage}
 
@@ -173,71 +56,11 @@ resources:
   # dynamodb
   Resources:
     EventTable:
-      Type: AWS::DynamoDB::Table
-      Properties:
-        TableName: ${self:custom.eventTable}
-        AttributeDefinitions:
-          - AttributeName: id
-            AttributeType: S
-          - AttributeName: date
-            AttributeType: S
-          - AttributeName: location
-            AttributeType: S
-        KeySchema:
-          - AttributeName: id
-            KeyType: HASH
-          - AttributeName: date
-            KeyType: RANGE
-        LocalSecondaryIndexes:
-          - IndexName: locationIndex
-            KeySchema:
-              - AttributeName: id
-                KeyType: HASH
-              - AttributeName: location
-                KeyType: RANGE
-            Projection:
-              ProjectionType: ALL
-        ProvisionedThroughput:
-          ReadCapacityUnits: ${self:custom.tableThroughputs.${self:provider.stage}}
-          WriteCapacityUnits: ${self:custom.tableThroughputs.${self:provider.stage}}
-        StreamSpecification:
-          StreamViewType: NEW_IMAGE
+      ${file(resources/eventTable.yml)}
     ActivityTable:
-      Type: AWS::DynamoDB::Table
-      Properties:
-        TableName: ${self:custom.activityTable}
-        AttributeDefinitions:
-          - AttributeName: id
-            AttributeType: S
-          - AttributeName: date
-            AttributeType: S
-          - AttributeName: location
-            AttributeType: S
-        KeySchema:
-          - AttributeName: id
-            KeyType: HASH
-          - AttributeName: date
-            KeyType: RANGE
-        LocalSecondaryIndexes:
-          - IndexName: locationIndex
-            KeySchema:
-              - AttributeName: id
-                KeyType: HASH
-              - AttributeName: location
-                KeyType: RANGE
-            Projection:
-              ProjectionType: ALL
-        ProvisionedThroughput:
-          ReadCapacityUnits: ${self:custom.tableThroughputs.${self:provider.stage}}
-          WriteCapacityUnits: ${self:custom.tableThroughputs.${self:provider.stage}}
-        StreamSpecification:
-          StreamViewType: NEW_IMAGE
+      ${file(resources/activityTable.yml)}
     # s3
     S3BucketEvent:
-      Type: AWS::S3::Bucket
-      Properties:
-        BucketName: ${self:custom.eventBucket}
+      ${file(resources/s3BucketEvent.yml)}
     S3BucketActivity:
-      Type: AWS::S3::Bucket
-      Properties:
-        BucketName: ${self:custom.activityBucket}
+      ${file(resources/s3BucketActivity.yml)}

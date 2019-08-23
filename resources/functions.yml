@@ -1,0 +1,33 @@
+addNewEventMessage:
+  handler: handler.addNewEventMessage
+  events:
+    - http:
+        path: message/event
+        method: put
+        private: true
+addNewActivityMessage:
+  handler: handler.addNewActivityMessage
+  events:
+    - http:
+        path: message/activity
+        method: put
+        private: true
+newMessageEventListener:
+  handler: handler.newMessageEventListener
+  environment:
+    statemachineArn: ${self:resources.Outputs.EventsActivitiesProcess.Value}
+  events:
+    - stream:
+        type: dynamodb
+        arn:
+          Fn::GetAtt: [EventTable, StreamArn]
+    - stream:
+        type: dynamodb
+        arn:
+          Fn::GetAtt: [ActivityTable, StreamArn]
+caculateInsightOne:
+  handler: handler.caculateInsightOne
+caculateInsightTwo:
+  handler: handler.caculateInsightTwo
+syncDBToS3:
+  handler: handler.syncDBToS3
