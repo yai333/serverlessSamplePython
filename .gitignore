@@ -13,6 +13,7 @@ lib64/
 parts/
 sdist/
 var/
+__pycache__
 node_modules/
 *.egg-info/
 .installed.cfg
